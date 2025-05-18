@@ -1,0 +1,25 @@
+{
+  "name": "acmqe-analytics-test",
+  "version": "1.0.0",
+  "description": "QE tests for rightsizing",
+  "main": "index.js",
+  "scripts": {
+    "test:cypress": "cypress open",
+    "test:cypress-headless": "cypress run --headless",
+    "test:cypress-specific": "cypress run --headless --spec \"$npm_config_spec\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "cypress": "^14.3.3",
+    "cypress-multi-reporters": "^2.0.5",
+    "mocha-junit-reporter": "^2.2.1",
+    "mochawesome": "^7.1.3",
+    "mochawesome-merge": "^4.4.1",
+    "mochawesome-report-generator": "^6.2.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

@@ -1,0 +1,6 @@
+cypress.env.json
+node_modules/
+cypress/videos/
+cypress/screenshots/
+report/
+mochawesome-report/test-output/
