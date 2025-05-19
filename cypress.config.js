@@ -3,7 +3,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const env = JSON.parse(fs.readFileSync('cypress.env.json', 'utf8'));
 const OC_USERNAME = env.USERNAME;
-const OC_PASSWORD= env.PASSWORD;
+const OC_PASSWORD = env.PASSWORD;
 const OC_SERVER_URL = env.OC_SERVER_URL;
 
 module.exports = defineConfig({
@@ -30,7 +30,7 @@ module.exports = defineConfig({
   viewportHeight: 1050,
   viewportWidth: 1680,
   e2e: {
-    baseUrl: 'https://grafana-open-cluster-management-observability.apps.ci-vb-tr27-end.gcp.dev09.red-chesterfield.com/',
+    baseUrl: 'your-grafana-dashboard-url',
     specPattern: 'cypress/**/*.cy.{js,jsx,ts,tsx}',
     excludeSpecPattern: '**/ignoredTestFiles/*.cy.js',
     supportFile: 'cypress/support/index.js',
@@ -38,29 +38,39 @@ module.exports = defineConfig({
     //Retrive the thanos API url
     setupNodeEvents(on, config) {
       try {
-        // Dynamically get thanos querier api route
+        // Login
         execSync(
           `oc login ${OC_SERVER_URL} --username=${OC_USERNAME} --password=${OC_PASSWORD} --insecure-skip-tls-verify=true`,
           { stdio: 'inherit' }
         );
+
+        // Get Thanos host
         const thanosHost = execSync(
           "oc get route thanos-querier -n openshift-monitoring -o jsonpath='{.status.ingress[0].host}'",
           { encoding: 'utf-8' }
         ).trim();
 
-        // Dynamically get current user's token
-        const bearerToken = execSync(
-          'oc whoami -t',
-          { encoding: 'utf-8' }
-        ).trim(); 
+        // Get bearer token
+        const bearerToken = execSync('oc whoami -t', { encoding: 'utf-8' }).trim();
 
         config.env.THANOS_API = `https://${thanosHost}`;
         config.env.BEARER_TOKEN = bearerToken;
 
-        console.log('THANOS_API----------->:', config.env.THANOS_API);
-        console.log('BEARER_TOKEN----------->:', config.env.BEARER_TOKEN);
+        // Fetch recommendationPercentage from configmap and convert to factor
+        const rawConfig = execSync(
+          'oc get configmap rs-namespace-config -n open-cluster-management-observability -o jsonpath="{.data.prometheusRuleConfig}"',
+          { encoding: 'utf-8' }
+        );
+
+        const match = rawConfig.match(/recommendationPercentage:\s*(\d+)/);
+        if (match) {
+          const percentage = parseInt(match[1], 10);
+          config.env.recommendationFactor = percentage / 100;
+        } else {
+          console.warn('recommendationPercentage not found in configmap');
+        }
       } catch (err) {
-        console.error("Failed to fetch dynamic values", err);
+        console.error('Failed to fetch dynamic values', err);
       }
 
       return config;

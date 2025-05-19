@@ -11,13 +11,13 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   ];
   const thanosApi = Cypress.env('THANOS_API');
   const bearerToken = Cypress.env('BEARER_TOKEN');
+  const recommendationFactor = Cypress.env('recommendationFactor');
   const aggregation = '5d';
   const memoryConversion = {
     MiB: 1048576,
     GiB: 1073741824,
     B: 1,
   };
-  const recommendationFactor = 1.1;
   let maxCpuUsage = 0;
   let maxCpuRequest = 0;
   let memoryUsageBytes = 0;
@@ -230,15 +230,17 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     const unit = uiValue.includes('GiB')
       ? 'GiB'
       : uiValue.includes('MiB')
-        ? 'MiB'
-        : uiValue.includes('B')
-          ? 'B'
-          : 'unknown';
+      ? 'MiB'
+      : uiValue.includes('B')
+      ? 'B'
+      : 'unknown';
     const converted = convertBytes(expectedValueBytes, unit);
     const parsedUIValue = parseFloat(uiValue);
     expect(parsedUIValue).to.equal(
       Number(converted.toFixed(2)),
-      `Expected ${label} of namespace '${namespace}' to be: ${Number(converted.toFixed(2))}, actual ${label} in UI is: ${parsedUIValue}`
+      `Expected ${label} of namespace '${namespace}' to be: ${Number(
+        converted.toFixed(2)
+      )}, actual ${label} in UI is: ${parsedUIValue}`
     );
   }
 
@@ -246,10 +248,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     const unit = uiValue.includes('GiB')
       ? 'GiB'
       : uiValue.includes('MiB')
-        ? 'MiB'
-        : uiValue.includes('B')
-          ? 'B'
-          : 'unknown';
+      ? 'MiB'
+      : uiValue.includes('B')
+      ? 'B'
+      : 'unknown';
     const converted = convertBytes(actualBytes, unit);
     return Number((converted * recommendationFactor).toFixed(2));
   }
