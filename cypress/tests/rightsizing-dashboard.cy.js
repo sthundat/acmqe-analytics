@@ -28,10 +28,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     let utilizationPercent = 0;
     cy.get('@topNamespaces').then((topNamespaces) => {
       topNamespaces.forEach((namespace) => {
-        fetchMetric('cpu_usage', namespace).then((cpuUsage) => {
+        fetchMetric({ metric: 'cpu_usage', namespace: namespace}).then((cpuUsage) => {
           maxCpuUsage = cpuUsage;
 
-          fetchMetric('cpu_request', namespace).then((cpuRequest) => {
+          fetchMetric({ metric: 'cpu_request', namespace: namespace}).then((cpuRequest) => {
             maxCpuRequest = cpuRequest;
 
             if (maxCpuUsage && maxCpuRequest) {
@@ -141,10 +141,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     let utilizationPercent = 0;
     cy.get('@topNamespaces').then((topNamespaces) => {
       topNamespaces.forEach((namespace) => {
-        fetchMetric('memory_usage', namespace).then((memoryUsage) => {
+        fetchMetric({ metric: 'memory_usage', namespace: namespace}).then((memoryUsage) => {
           memoryUsageBytes = memoryUsage;
 
-          fetchMetric('memory_request', namespace).then((memoryRequest) => {
+          fetchMetric({ metric: 'memory_request', namespace: namespace}).then((memoryRequest) => {
             memoryRequestBytes = memoryRequest;
 
             if (memoryUsageBytes && memoryRequestBytes) {
@@ -175,8 +175,8 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                           )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
                         );
 
-                        assertMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
-                        assertMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
+                        assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
+                        assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
 
                         const expectedRecommendation = calculateExpectedRecommendation(usageText, memoryUsageBytes);
                         expect(parseFloat(recommendationText)).to.be.closeTo(
@@ -197,54 +197,104 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     });
   });
 
+  it(`validates cpu metrics at cluster level with given aggregation`, () => {
+    // Fetch CPU Usage
+    fetchMetric({ query: `max_over_time(acm_rs:cluster:cpu_usage:5m[${aggregation}])` }).then((usage) => {
+      if (usage === null) return;
+      maxCpuUsage = usage;
+
+      // Fetch CPU Request
+      fetchMetric({ query: `max_over_time(acm_rs:cluster:cpu_request:5m[${aggregation}])` }).then((request) => {
+        if (request === null) return;
+        maxCpuRequest = request;
+
+        // Fetch Recommendation
+        fetchMetric({
+          query: `max_over_time(acm_rs:cluster:cpu_usage{profile="Max OverAll"}[${aggregation}]) * ${recommendationFactor}`,
+        }).then((recommendation) => {
+          if (recommendation === null) return;
+          const utilizationPercent = (maxCpuUsage / maxCpuRequest) * 100;
+          assertClusterCPUValue(recommendation, 'CPU Recommendation');
+          assertClusterCPUValue(maxCpuUsage, 'CPU Usage');
+          assertClusterCPUValue(maxCpuRequest, 'CPU Request');
+          assertClusterCPUValue(utilizationPercent, 'CPU Utilization');
+        });
+      });
+    });
+  });
+
+  it(`validates memory metrics at cluster level with given aggregation`, () => {
+    // Fetch Memory Usage
+    fetchMetric({ query: `max_over_time(acm_rs:cluster:memory_usage:5m[${aggregation}])` }).then((usage) => {
+      if (usage === null) return;
+      memoryUsageBytes = usage;
+
+      // Fetch Memory Request
+      fetchMetric({ query: `max_over_time(acm_rs:cluster:memory_request:5m[${aggregation}])` }).then((request) => {
+        if (request === null) return;
+        memoryRequestBytes = request;
+
+        // Fetch Recommendation (Usage * 1.1)
+        fetchMetric({
+          query: `max_over_time(acm_rs:cluster:memory_usage{profile="Max OverAll"}[${aggregation}]) * ${recommendationFactor}`,
+        }).then((recommendation) => {
+          if (recommendation === null) return;
+          const recommendationBytes = recommendation;
+
+          const utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
+
+          // Assertions
+          assertClusterMemoryValue(recommendationBytes, 'Memory Recommendation');
+          assertClusterMemoryValue(memoryUsageBytes, 'Memory Usage');
+          assertClusterMemoryValue(memoryRequestBytes, 'Memory Request');
+          assertClusterMemoryValue(utilizationPercent, 'Memory Utilization');
+        });
+      });
+    });
+  });
+
   function fetchTopNamespaces(usageMetric, requestMetric, label) {
     const query = `topk(9, max_over_time(sum by (namespace) (${usageMetric})[${aggregation}:]) / max_over_time(sum by (namespace) (${requestMetric})[${aggregation}:]) * 100)`;
-
-    return cy
-      .request({
-        method: 'GET',
-        url: `${thanosApi}/api/v1/query`,
-        headers: { Authorization: `Bearer ${bearerToken}` },
-        qs: { query },
-      })
-      .then((response) => {
-        const results = response.body.data?.result || [];
-
-        if (results.length === 0) {
-          cy.log(`No datapoints found for top ${label} utilization namespaces`);
-        }
-
+    
+    return queryThanos(query).then((results) => {
+      if (results.length === 0) {
+        cy.log(`No datapoints found for top ${label} utilization namespaces`);
+      }
         const namespaces = results.map((r) => r.metric.namespace);
-
         namespaces.forEach((ns, index) => {
           const utilization = parseFloat(results[index].value[1]).toFixed(2);
           cy.log(`${index + 1}. ${ns} - ${label} Utilization: ${utilization}%`);
         });
-
         return cy.wrap(namespaces);
       });
   }
 
-  function fetchMetric(metric, namespace) {
-    const query = `max_over_time(acm_rs:namespace:${metric}{namespace="${namespace}"}[${aggregation}])`;
-    return cy
-      .request({
-        method: 'GET',
-        url: `${thanosApi}/api/v1/query`,
-        headers: { Authorization: `Bearer ${bearerToken}` },
-        qs: { query },
-      })
-      .then((response) => {
-        const results = response.body.data.result;
+  function fetchMetric({ metric = null, namespace = null, query = null}) {
+    const finalQuery = query || `max_over_time(acm_rs:namespace:${metric}{namespace="${namespace}"}[${aggregation}])`;
+  
+    return queryThanos(finalQuery).then((results) => {
         if (!results || results.length === 0) {
-          cy.log(`No datapoints found for metric: ${metric} in namespace: ${namespace}`);
+          cy.log(
+            `No datapoints found for ${query ? `query: ${query}` : `metric: ${metric} in namespace: ${namespace}`}`
+          );
           return null;
         }
         return parseFloat(results[0].value[1]);
       });
   }
 
-  function assertMemoryValue(label, uiValue, expectedValueBytes, namespace) {
+  function queryThanos(query) {
+    return cy
+      .request({
+        method: 'GET',
+        url: `${thanosApi}/api/v1/query`,
+        headers: { Authorization: `Bearer ${bearerToken}` },
+        qs: { query },
+      })
+      .then((response) => response.body.data?.result || []);
+  }
+
+  function assertNamespaceMemoryValue(label, uiValue, expectedValueBytes, namespace) {
     const unit = uiValue.includes('GiB')
       ? 'GiB'
       : uiValue.includes('MiB')
@@ -262,6 +312,48 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     );
   }
 
+  function assertClusterMemoryValue(expectedMemoryValue, panelTitle) {
+    // cy.scrollTo('bottom');
+    cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
+
+    cy.get(`section[data-testid="data-testid Panel header ${panelTitle}"]`)
+      .contains(/^\d+(\.\d+)?/)
+      .then(($numberSpan) => {
+        const NumericUIValue = parseFloat($numberSpan.text());
+        if (panelTitle === 'Memory Utilization') {
+          const expectedValue = parseFloat(expectedMemoryValue);
+
+          expect(NumericUIValue).to.be.closeTo(
+            Number(expectedValue.toFixed(2)),
+            0.1,
+            `Expected ${panelTitle} to be close to: ${Number(
+              expectedValue.toFixed(2)
+            )}, actual ${panelTitle} in UI is: ${NumericUIValue}`
+          );
+        } else {
+          const unit = $numberSpan.parent().find('span').eq(1).text().trim();
+
+          const memoryUnit = unit.includes('GiB')
+            ? 'GiB'
+            : unit.includes('MiB')
+            ? 'MiB'
+            : unit.includes('B')
+            ? 'B'
+            : 'unknown';
+          const expectedValue = convertBytes(expectedMemoryValue, memoryUnit);
+          const parsedUIValue = parseFloat(NumericUIValue);
+
+          expect(parsedUIValue).to.be.closeTo(
+            Number(expectedValue.toFixed(2)),
+            0.1,
+            `Expected ${panelTitle} to be close to: ${Number(
+              expectedValue.toFixed(2)
+            )}, actual ${panelTitle} in UI is: ${parsedUIValue}`
+          );
+        }
+      });
+  }
+
   function calculateExpectedRecommendation(uiValue, actualBytes) {
     const unit = uiValue.includes('GiB')
       ? 'GiB'
@@ -276,5 +368,23 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
   function convertBytes(bytes, unit) {
     return bytes / memoryConversion[unit];
+  }
+
+  function assertClusterCPUValue(expectedValue, panelTitle) {
+    cy.get(`section[data-testid="data-testid Panel header ${panelTitle}"]`)
+      .find('span')
+      .contains(/^\d+(\.\d+)?$/)
+      .then(($span) => {
+        const value = $span.text();
+        const uiValue = parseFloat(value.replace(/[^\d.]/g, ''));
+
+        expect(uiValue).to.be.closeTo(
+          Number(expectedValue.toFixed(2)),
+          .1,
+          `Expected ${panelTitle} to be close to: ${Number(
+            expectedValue.toFixed(2)
+          )}, actual ${panelTitle} in UI is: ${uiValue}`
+        );
+      });
   }
 });
