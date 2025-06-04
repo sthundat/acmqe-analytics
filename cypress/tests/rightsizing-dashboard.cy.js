@@ -240,7 +240,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
         }).then((recommendation) => {
           if (recommendation === null) return;
           const recommendationBytes = recommendation;
-
           const utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
 
           // Assertions
@@ -253,9 +252,19 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     });
   });
 
+  it("should create a workload in a custom namespace and verify the metrics", () => {
+    const namespace = 'custom-namespace';
+    cy.exec('oc get namespace ${namespace} || oc create namespace ${namespace}').then(() => {
+      cy.exec('oc apply -f cypress/resources/customresource.yaml').then((result) => {
+        expect(result.code).to.eq(0);
+        cy.log('Workload created successfully');
+        waitForNamespaceMetrics( namespace);
+        });
+    });
+  });
+
   function fetchTopNamespaces(usageMetric, requestMetric, label) {
     const query = `topk(9, max_over_time(sum by (namespace) (${usageMetric})[${aggregation}:]) / max_over_time(sum by (namespace) (${requestMetric})[${aggregation}:]) * 100)`;
-    
     return queryThanos(query).then((results) => {
       if (results.length === 0) {
         cy.log(`No datapoints found for top ${label} utilization namespaces`);
@@ -271,7 +280,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
   function fetchMetric({ metric = null, namespace = null, query = null}) {
     const finalQuery = query || `max_over_time(acm_rs:namespace:${metric}{namespace="${namespace}"}[${aggregation}])`;
-  
     return queryThanos(finalQuery).then((results) => {
         if (!results || results.length === 0) {
           cy.log(
@@ -315,7 +323,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   function assertClusterMemoryValue(expectedMemoryValue, panelTitle) {
     // cy.scrollTo('bottom');
     cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
-
     cy.get(`section[data-testid="data-testid Panel header ${panelTitle}"]`)
       .contains(/^\d+(\.\d+)?/)
       .then(($numberSpan) => {
@@ -386,5 +393,28 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
           )}, actual ${panelTitle} in UI is: ${uiValue}`
         );
       });
+  }
+
+  function waitForNamespaceMetrics(namespace, retries = 7, retryInterval = 150000) {
+    // Automatic retry logic while waiting for metrics to show up
+    const query = `max_over_time(acm_rs:namespace:cpu_usage{namespace="${namespace}"}[5m])`;
+
+    function poll(attempt = 1) {
+      return queryThanos(query).then((results) => {
+        const currentTime = new Date().toLocaleTimeString();
+        if (results.length > 0) {
+          cy.log(`[${currentTime}] Metrics found for query: ${query}`);
+          return;
+        }
+
+        if (attempt < retries) {
+          cy.log(`[${currentTime}] Attempt ${attempt}: No metrics yet, retrying in ${retryInterval / 1000}s...`);
+          return cy.wait(retryInterval).then(() => poll(attempt + 1));
+        }
+
+        throw new Error(`Metrics not found for query: ${query} after ${retries} retries`);
+      });
+    }
+    return poll();
   }
 });

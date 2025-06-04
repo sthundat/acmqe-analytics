@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: custom-test
+  namespace: custom-namespace
+  labels:
+    app: custom-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: custom-test
+  template:
+    metadata:
+      labels:
+        app: custom-test
+    spec:
+      containers:
+      - name: stress
+        image: polinux/stress
+        command: ["stress", "--cpu", "1", "--io", "1", "--vm", "1", "--vm-bytes", "128M", "--timeout", "600s"]
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "500m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
