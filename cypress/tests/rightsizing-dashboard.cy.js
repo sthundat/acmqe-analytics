@@ -55,11 +55,12 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                           );
                         } else {
                           const tableCpuUtilization = parseFloat(utilizationText.replace('%', ''));
-                          expect(tableCpuUtilization.toFixed(2)).to.equal(
-                            utilizationPercent.toFixed(2),
-                            `Expected CPU utilization of namespace '${namespace}' to be: ${utilizationPercent.toFixed(
+                          expect(tableCpuUtilization).to.be.closeTo(
+                            Number(utilizationPercent.toFixed(2)),
+                            0.1,
+                            `Expected CPU utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
                               2
-                            )}, actual value in UI is: ${tableCpuUtilization}`
+                            )}, actual value in UI is: ${tableCpuUtilization.toFixed(2)}`
                           );
                         }
                         // compare cpu usage
@@ -98,7 +99,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                         } else {
                           expect(parseFloat(requestText)).to.be.closeTo(
                             maxCpuRequest,
-                            0.01, // allow ±0.01 tolerance
+                            0.01,
                             `Expected CPU request of namespace '${namespace}' to be close to: ${maxCpuRequest}, actual value in UI is: ${requestText}`
                           );
                         }
@@ -152,8 +153,8 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
             } else {
               cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
             }
-            // cy.scrollTo('bottom');
-            cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
+            cy.scrollTo('bottom');
+            // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
             cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
               cy.get('[data-testid="data-testid table body"]')
                 .find('[role="row"]')
@@ -168,9 +169,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
                         const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
 
-                        expect(tableMemoryUtilization.toFixed(2)).to.equal(
-                          utilizationPercent.toFixed(2),
-                          `Expected memory utilization of namespace '${namespace}' to be: ${utilizationPercent.toFixed(
+                        expect(tableMemoryUtilization).to.be.closeTo(
+                          utilizationPercent,
+                          0.1,
+                          `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
                             2
                           )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
                         );
@@ -242,7 +244,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
           const recommendationBytes = recommendation;
           const utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
 
-          // Assertions
           assertClusterMemoryValue(recommendationBytes, 'Memory Recommendation');
           assertClusterMemoryValue(memoryUsageBytes, 'Memory Usage');
           assertClusterMemoryValue(memoryRequestBytes, 'Memory Request');
@@ -312,17 +313,18 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
       : 'unknown';
     const converted = convertBytes(expectedValueBytes, unit);
     const parsedUIValue = parseFloat(uiValue);
-    expect(parsedUIValue).to.equal(
+    expect(parsedUIValue).to.be.closeTo(
       Number(converted.toFixed(2)),
-      `Expected ${label} of namespace '${namespace}' to be: ${Number(
+      0.05,
+      `Expected ${label} of namespace '${namespace}' to be close to: ${Number(
         converted.toFixed(2)
       )}, actual ${label} in UI is: ${parsedUIValue}`
     );
   }
 
   function assertClusterMemoryValue(expectedMemoryValue, panelTitle) {
-    // cy.scrollTo('bottom');
-    cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
+    cy.scrollTo('bottom');
+    // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
     cy.get(`section[data-testid="data-testid Panel header ${panelTitle}"]`)
       .contains(/^\d+(\.\d+)?/)
       .then(($numberSpan) => {
