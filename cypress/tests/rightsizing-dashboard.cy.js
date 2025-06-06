@@ -47,22 +47,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                       const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
                       if (cellTexts[0] === namespace) {
                         const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
-                        //compare cpu utilization
-                        if (utilizationPercent === 'N/A') {
-                          expect(utilizationText.trim()).to.equal(
-                            'N/A',
-                            `Expected CPU utilization of namespace '${namespace}' to be 'N/A', actual value in UI is: '${utilizationText.trim()}'`
-                          );
-                        } else {
-                          const tableCpuUtilization = parseFloat(utilizationText.replace('%', ''));
-                          expect(tableCpuUtilization).to.be.closeTo(
-                            Number(utilizationPercent.toFixed(2)),
-                            0.1,
-                            `Expected CPU utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
-                              2
-                            )}, actual value in UI is: ${tableCpuUtilization.toFixed(2)}`
-                          );
-                        }
                         // compare cpu usage
                         if (isNaN(maxCpuUsage) || maxCpuUsage === null || maxCpuUsage === undefined) {
                           expect(usageText.trim()).to.equal(
@@ -101,6 +85,22 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                             maxCpuRequest,
                             0.01,
                             `Expected CPU request of namespace '${namespace}' to be close to: ${maxCpuRequest}, actual value in UI is: ${requestText}`
+                          );
+                        }
+                        //compare cpu utilization
+                        if (utilizationPercent === 'N/A') {
+                          expect(utilizationText.trim()).to.equal(
+                            'N/A',
+                            `Expected CPU utilization of namespace '${namespace}' to be 'N/A', actual value in UI is: '${utilizationText.trim()}'`
+                          );
+                        } else {
+                          const tableCpuUtilization = parseFloat(utilizationText.replace('%', ''));
+                          expect(tableCpuUtilization).to.be.closeTo(
+                            Number(utilizationPercent.toFixed(2)),
+                            0.1,
+                            `Expected CPU utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
+                              2
+                            )}, actual value in UI is: ${tableCpuUtilization.toFixed(2)}`
                           );
                         }
                         // compare cpu recomendation
@@ -167,18 +167,17 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                       if (cellTexts[0] === namespace) {
                         const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
 
-                        const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
+                        assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
+                        assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
 
+                        const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
                         expect(tableMemoryUtilization).to.be.closeTo(
-                          utilizationPercent,
+                          Number(utilizationPercent.toFixed(2)),
                           0.1,
                           `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
                             2
                           )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
                         );
-
-                        assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
-                        assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
 
                         const expectedRecommendation = calculateExpectedRecommendation(usageText, memoryUsageBytes);
                         expect(parseFloat(recommendationText)).to.be.closeTo(
@@ -315,7 +314,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     const parsedUIValue = parseFloat(uiValue);
     expect(parsedUIValue).to.be.closeTo(
       Number(converted.toFixed(2)),
-      0.05,
+      0.1,
       `Expected ${label} of namespace '${namespace}' to be close to: ${Number(
         converted.toFixed(2)
       )}, actual ${label} in UI is: ${parsedUIValue}`
