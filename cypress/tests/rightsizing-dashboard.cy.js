@@ -252,6 +252,38 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     });
   });
 
+  it('should display top utilized namespaces in descending order in the CPU quota table', () => {
+    fetchTopNamespaces('acm_rs:namespace:cpu_usage', 'acm_rs:namespace:cpu_request', 'CPU').then((namespaces) => {
+      cy.wrap(namespaces).as('topNamespaces');
+    });
+    cy.get('@topNamespaces').then((topNamespaces) => {
+      getNamespacesFromUIQuotaTable('[data-testid="data-testid Panel header CPU Quota"]').then((uiNamespaces) => {
+        expect(uiNamespaces).to.deep.equal(
+          topNamespaces,
+          `Expected top CPU utilized namespaces order.\nExpected: ${topNamespaces.join(', ')}\nActual: ${uiNamespaces.join(', ')}`
+        );
+      });
+    });
+  });
+
+  it('should display top utilized namespaces in descending order in the memory quota table', () => {
+    fetchTopNamespaces('acm_rs:namespace:memory_usage', 'acm_rs:namespace:memory_request', 'memory').then(
+      (namespaces) => {
+        cy.wrap(namespaces).as('topNamespaces');
+      }
+    );
+    cy.scrollTo('bottom');
+    // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
+    cy.get('@topNamespaces').then((topNamespaces) => {
+      getNamespacesFromUIQuotaTable('[data-testid="data-testid Panel header Memory Quota"]').then((uiNamespaces) => {
+        expect(uiNamespaces).to.deep.equal(
+          topNamespaces,
+          `Expected top memory utilized namespaces order.\nExpected: ${topNamespaces.join(', ')}\nActual: ${uiNamespaces.join(', ')}`
+        );
+      });
+    });
+  });
+
   it("should create a workload in a custom namespace and verify the metrics", () => {
     const namespace = 'custom-namespace';
     cy.exec('oc get namespace ${namespace} || oc create namespace ${namespace}').then(() => {
@@ -417,5 +449,26 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
       });
     }
     return poll();
+  }
+
+  function getNamespacesFromUIQuotaTable(panelSelector) {
+    const uiNamespaces = [];
+
+    cy.get(panelSelector).within(() => {
+      cy.get('div[data-testid="data-testid table body"]').within(() => {
+        cy.get('div[role="row"]').each(($row) => {
+          cy.wrap($row).within(() => {
+            cy.get('div[role="cell"]')
+              .first()
+              .invoke('text')
+              .then((text) => {
+                uiNamespaces.push(text.trim());
+              });
+          });
+        });
+      });
+    });
+
+    return cy.wrap(null).then(() => uiNamespaces);
   }
 });
