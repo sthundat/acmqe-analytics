@@ -35,7 +35,6 @@ module.exports = defineConfig({
     excludeSpecPattern: '**/ignoredTestFiles/*.cy.js',
     supportFile: 'cypress/support/index.js',
     testIsolation: false,
-    //Retrive the thanos API url
     setupNodeEvents(on, config) {
       try {
         // Login
@@ -44,16 +43,8 @@ module.exports = defineConfig({
           { stdio: 'inherit' }
         );
 
-        // Get Thanos host
-        const thanosHost = execSync(
-          "oc get route thanos-querier -n openshift-monitoring -o jsonpath='{.status.ingress[0].host}'",
-          { encoding: 'utf-8' }
-        ).trim();
-
         // Get bearer token
         const bearerToken = execSync('oc whoami -t', { encoding: 'utf-8' }).trim();
-
-        config.env.THANOS_API = `https://${thanosHost}`;
         config.env.BEARER_TOKEN = bearerToken;
 
         // Fetch recommendationPercentage from configmap and convert to factor
@@ -66,9 +57,40 @@ module.exports = defineConfig({
         if (match) {
           const percentage = parseInt(match[1], 10);
           config.env.recommendationFactor = percentage / 100;
-        } else {
-          console.warn('recommendationPercentage not found in configmap');
         }
+        // Create the route for Thanos Query Frontend Route(if not already present)
+        try {
+          execSync(
+            `
+                    echo "
+                  apiVersion: route.openshift.io/v1
+                  kind: Route
+                  metadata:
+                    name: query-frontend
+                  spec:
+                    port:
+                      targetPort: http
+                    wildcardPolicy: None
+                    to:
+                      kind: Service
+                      name: observability-thanos-query-frontend
+                  " | oc -n open-cluster-management-observability apply -f -
+                  `,
+            { stdio: 'inherit', shell: '/bin/bash' }
+          );
+        } catch (e) {
+          console.warn('Route creation/expose may have failed (may already exist):', e.message);
+        }
+        //  Get the Route URL
+        const frontendHost = execSync(
+          "oc get route query-frontend -n open-cluster-management-observability -o jsonpath='{.spec.host}'",
+          { encoding: 'utf-8' }
+        )
+          .replace(/'/g, '')
+          .trim();
+
+        config.env.THANOS_FRONTEND_URL = `http://${frontendHost}`;
+        console.log(`THANOS_FRONTEND_URL: ${config.env.THANOS_FRONTEND_URL}`);
       } catch (err) {
         console.error('Failed to fetch dynamic values', err);
       }

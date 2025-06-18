@@ -1,5 +1,5 @@
 describe('Rightsizing - Validate CPU and Memory metrics', () => {
-  const thanosApi = Cypress.env('THANOS_API');
+  const thanosFrontendUrl = Cypress.env('THANOS_FRONTEND_URL');
   const bearerToken = Cypress.env('BEARER_TOKEN');
   const recommendationFactor = Cypress.env('recommendationFactor');
   const aggregation = '5d';
@@ -20,7 +20,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     //    cy.contains("local-cluster").click();
     //    cy.get("#var-days").click();
   });
-
   it('validates CPU metrics for top namespaces', () => {
     fetchTopNamespaces('acm_rs:namespace:cpu_usage', 'acm_rs:namespace:cpu_request', 'CPU').then((namespaces) => {
       cy.wrap(namespaces).as('topNamespaces');
@@ -327,7 +326,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     return cy
       .request({
         method: 'GET',
-        url: `${thanosApi}/api/v1/query`,
+        url: `${thanosFrontendUrl}/api/v1/query`,
         headers: { Authorization: `Bearer ${bearerToken}` },
         qs: { query },
       })
