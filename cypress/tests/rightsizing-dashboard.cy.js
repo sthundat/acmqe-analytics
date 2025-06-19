@@ -2,6 +2,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   const thanosFrontendUrl = Cypress.env('THANOS_FRONTEND_URL');
   const bearerToken = Cypress.env('BEARER_TOKEN');
   const recommendationFactor = Cypress.env('recommendationFactor');
+  const cluster = 'local-cluster';
   const aggregation = '5d';
   const memoryConversion = {
     MiB: 1048576,
@@ -10,8 +11,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   };
   let maxCpuUsage = 0;
   let maxCpuRequest = 0;
+  let maxRecommendation = 0;
   let memoryUsageBytes = 0;
   let memoryRequestBytes = 0;
+  let memoryRecommendationBytes = 0;
 
   before(() => {
     cy.login(Cypress.env('USERNAME'), Cypress.env('PASSWORD'));
@@ -27,100 +30,103 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     let utilizationPercent = 0;
     cy.get('@topNamespaces').then((topNamespaces) => {
       topNamespaces.forEach((namespace) => {
-        fetchMetric({ metric: 'cpu_usage', namespace: namespace}).then((cpuUsage) => {
+        fetchMetric({ metric: 'cpu_usage', namespace: namespace }).then((cpuUsage) => {
           maxCpuUsage = cpuUsage;
 
-          fetchMetric({ metric: 'cpu_request', namespace: namespace}).then((cpuRequest) => {
+          fetchMetric({ metric: 'cpu_request', namespace: namespace }).then((cpuRequest) => {
             maxCpuRequest = cpuRequest;
 
-            if (maxCpuUsage && maxCpuRequest) {
-              utilizationPercent = (maxCpuUsage / maxCpuRequest) * 100;
-            } else {
-              cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
-            }
-            cy.get('[data-testid="data-testid Panel header CPU Quota"]').within(() => {
-              cy.get('div[data-testid="data-testid table body"]').within(() => {
-                cy.get('div[role="row"]').each(($row) => {
-                  cy.wrap($row).within(() => {
-                    cy.get('div[role="cell"]').then(($cells) => {
-                      const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
-                      if (cellTexts[0] === namespace) {
-                        const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
-                        // compare cpu usage
-                        if (isNaN(maxCpuUsage) || maxCpuUsage === null || maxCpuUsage === undefined) {
-                          expect(usageText.trim()).to.equal(
-                            'N/A',
-                            `Expected CPU usage of namespace '${namespace}' to be 'N/A', actual value in UI is: '${usageText.trim()}'`
-                          );
-                        } else {
-                          let expectedUsage;
+            fetchMetric({ metric: 'cpu_recommendation', namespace: namespace }).then((cpuRecommendation) => {
+              maxRecommendation = cpuRecommendation;
 
-                          if (maxCpuUsage === 0) {
-                            expectedUsage = 0;
-                          } else if (maxCpuUsage > 0 && maxCpuUsage < 0.01) {
-                            expectedUsage = 0.01;
+              if (maxCpuUsage && maxCpuRequest) {
+                utilizationPercent = (maxCpuUsage / maxCpuRequest) * 100;
+              } else {
+                cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
+              }
+              cy.wait(1000);
+              cy.get('[data-testid="data-testid Panel header CPU Quota"]').within(() => {
+                cy.get('div[data-testid="data-testid table body"]').within(() => {
+                  cy.get('div[role="row"]').each(($row) => {
+                    cy.wrap($row).within(() => {
+                      cy.get('div[role="cell"]').then(($cells) => {
+                        const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
+                        if (cellTexts[0] === namespace) {
+                          const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
+                          // compare cpu usage
+                          if (isNaN(maxCpuUsage) || maxCpuUsage === null || maxCpuUsage === undefined) {
+                            expect(usageText.trim()).to.equal(
+                              'N/A',
+                              `Expected CPU usage of namespace '${namespace}' to be 'N/A', actual value in UI is: '${usageText.trim()}'`
+                            );
                           } else {
-                            expectedUsage = maxCpuUsage;
+                            let expectedUsage;
+
+                            if (maxCpuUsage === 0) {
+                              expectedUsage = 0;
+                            } else if (maxCpuUsage > 0 && maxCpuUsage < 0.01) {
+                              expectedUsage = 0.01;
+                            } else {
+                              expectedUsage = maxCpuUsage;
+                            }
+
+                            expect(usageText).to.equal(
+                              expectedUsage.toFixed(2),
+                              `Expected CPU usage of namespace '${namespace}' to be: ${expectedUsage.toFixed(
+                                2
+                              )}, actual value in UI is: ${usageText}`
+                            );
+                          }
+                          // compare cpu request
+                          const isInvalidRequest =
+                            maxCpuRequest === undefined || maxCpuRequest === null || isNaN(maxCpuRequest);
+
+                          if (isInvalidRequest) {
+                            expect(requestText.trim()).to.equal(
+                              'N/A',
+                              `Expected CPU request of namespace '${namespace}' to be 'N/A', actual value in UI is: '${requestText.trim()}'`
+                            );
+                          } else {
+                            expect(parseFloat(requestText)).to.be.closeTo(
+                              maxCpuRequest,
+                              0.01,
+                              `Expected CPU request of namespace '${namespace}' to be close to: ${maxCpuRequest}, actual value in UI is: ${requestText}`
+                            );
+                          }
+                          //compare cpu utilization
+                          if (utilizationPercent === 'N/A') {
+                            expect(utilizationText.trim()).to.equal(
+                              'N/A',
+                              `Expected CPU utilization of namespace '${namespace}' to be 'N/A', actual value in UI is: '${utilizationText.trim()}'`
+                            );
+                          } else {
+                            const tableCpuUtilization = parseFloat(utilizationText.replace('%', ''));
+                            expect(tableCpuUtilization).to.be.closeTo(
+                              Number(utilizationPercent.toFixed(2)),
+                              0.1,
+                              `Expected CPU utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
+                                2
+                              )}, actual value in UI is: ${tableCpuUtilization.toFixed(2)}`
+                            );
+                          }
+                          // compare cpu recommendation
+                          let expectedRecommendation;
+                          if (maxRecommendation === 0) {
+                            expectedRecommendation = 0;
+                          } else if (maxRecommendation > 0 && maxRecommendation < 0.01) {
+                            expectedRecommendation = 0.01;
+                          } else {
+                            expectedRecommendation = maxRecommendation;
                           }
 
-                          expect(usageText).to.equal(
-                            expectedUsage.toFixed(2),
-                            `Expected CPU usage of namespace '${namespace}' to be: ${expectedUsage.toFixed(
+                          expect(recommendationText).to.equal(
+                            expectedRecommendation.toFixed(2),
+                            `Expected CPU recommendation of namespace '${namespace}' to be: ${expectedRecommendation.toFixed(
                               2
-                            )}, actual value in UI is: ${usageText}`
+                            )}, actual value in UI is: ${recommendationText}`
                           );
                         }
-                        // compare cpu request
-                        const isInvalidRequest =
-                          maxCpuRequest === undefined || maxCpuRequest === null || isNaN(maxCpuRequest);
-
-                        if (isInvalidRequest) {
-                          expect(requestText.trim()).to.equal(
-                            'N/A',
-                            `Expected CPU request of namespace '${namespace}' to be 'N/A', actual value in UI is: '${requestText.trim()}'`
-                          );
-                        } else {
-                          expect(parseFloat(requestText)).to.be.closeTo(
-                            maxCpuRequest,
-                            0.01,
-                            `Expected CPU request of namespace '${namespace}' to be close to: ${maxCpuRequest}, actual value in UI is: ${requestText}`
-                          );
-                        }
-                        //compare cpu utilization
-                        if (utilizationPercent === 'N/A') {
-                          expect(utilizationText.trim()).to.equal(
-                            'N/A',
-                            `Expected CPU utilization of namespace '${namespace}' to be 'N/A', actual value in UI is: '${utilizationText.trim()}'`
-                          );
-                        } else {
-                          const tableCpuUtilization = parseFloat(utilizationText.replace('%', ''));
-                          expect(tableCpuUtilization).to.be.closeTo(
-                            Number(utilizationPercent.toFixed(2)),
-                            0.1,
-                            `Expected CPU utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
-                              2
-                            )}, actual value in UI is: ${tableCpuUtilization.toFixed(2)}`
-                          );
-                        }
-                        // compare cpu recomendation
-                        const rawRecommendation = maxCpuUsage * recommendationFactor;
-
-                        let expectedRecommendation;
-                        if (rawRecommendation === 0) {
-                          expectedRecommendation = 0;
-                        } else if (rawRecommendation > 0 && rawRecommendation < 0.01) {
-                          expectedRecommendation = 0.01;
-                        } else {
-                          expectedRecommendation = rawRecommendation;
-                        }
-
-                        expect(recommendationText).to.equal(
-                          expectedRecommendation.toFixed(2),
-                          `Expected CPU recommendation of namespace '${namespace}' to be: ${expectedRecommendation.toFixed(
-                            2
-                          )}, actual value in UI is: ${recommendationText}`
-                        );
-                      }
+                      });
                     });
                   });
                 });
@@ -141,55 +147,52 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     let utilizationPercent = 0;
     cy.get('@topNamespaces').then((topNamespaces) => {
       topNamespaces.forEach((namespace) => {
-        fetchMetric({ metric: 'memory_usage', namespace: namespace}).then((memoryUsage) => {
+        fetchMetric({ metric: 'memory_usage', namespace: namespace }).then((memoryUsage) => {
           memoryUsageBytes = memoryUsage;
 
-          fetchMetric({ metric: 'memory_request', namespace: namespace}).then((memoryRequest) => {
+          fetchMetric({ metric: 'memory_request', namespace: namespace }).then((memoryRequest) => {
             memoryRequestBytes = memoryRequest;
 
-            if (memoryUsageBytes && memoryRequestBytes) {
-              utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
-            } else {
-              cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
-            }
-            cy.scrollTo('bottom');
-            // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
-            cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
-              cy.get('[data-testid="data-testid table body"]')
-                .find('[role="row"]')
-                .should('exist')
-                .each(($row) => {
-                  cy.wrap($row).within(() => {
-                    cy.get('[role="cell"]').then(($cells) => {
-                      const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
+            fetchMetric({ metric: 'memory_recommendation', namespace: namespace }).then((memoryRecommendation) => {
+              memoryRecommendationBytes = memoryRecommendation;
 
-                      if (cellTexts[0] === namespace) {
-                        const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
+              if (memoryUsageBytes && memoryRequestBytes) {
+                utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
+              } else {
+                cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
+              }
+              cy.scrollTo('bottom');
+              cy.wait(1000);
+              // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
+              cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
+                cy.get('[data-testid="data-testid table body"]')
+                  .find('[role="row"]')
+                  .should('exist')
+                  .each(($row) => {
+                    cy.wrap($row).within(() => {
+                      cy.get('[role="cell"]').then(($cells) => {
+                        const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
 
-                        assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
-                        assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
+                        if (cellTexts[0] === namespace) {
+                          const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
 
-                        const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
-                        expect(tableMemoryUtilization).to.be.closeTo(
-                          Number(utilizationPercent.toFixed(2)),
-                          0.1,
-                          `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
-                            2
-                          )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
-                        );
+                          assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
+                          assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
+                          assertNamespaceMemoryValue('MemoryRecommendation', recommendationText, memoryRecommendationBytes, namespace);
 
-                        const expectedRecommendation = calculateExpectedRecommendation(usageText, memoryUsageBytes);
-                        expect(parseFloat(recommendationText)).to.be.closeTo(
-                          expectedRecommendation,
-                          0.01,
-                          `Expected recommendation value is ${expectedRecommendation}, actual value in UI is: ${parseFloat(
-                            recommendationText
-                          )}`
-                        );
-                      }
+                          const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
+                          expect(tableMemoryUtilization).to.be.closeTo(
+                            Number(utilizationPercent.toFixed(2)),
+                            0.1,
+                            `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
+                              2
+                            )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
+                          );
+                        }
+                      });
                     });
                   });
-                });
+              });
             });
           });
         });
@@ -197,23 +200,27 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     });
   });
 
+  const buildClusterMetricQuery = (metricName) =>
+    `max_over_time(sum by (cluster) (acm_rs:cluster:${metricName}{cluster="${cluster}", profile="Max OverAll"})[${aggregation}:])`;
+
   it(`validates cpu metrics at cluster level with given aggregation`, () => {
-    // Fetch CPU Usage
-    fetchMetric({ query: `max_over_time(acm_rs:cluster:cpu_usage:5m[${aggregation}])` }).then((usage) => {
+    const cpuUsageQuery = buildClusterMetricQuery('cpu_usage');
+    const cpuRequestQuery = buildClusterMetricQuery('cpu_request');
+    const cpuRecommendationQuery = buildClusterMetricQuery('cpu_recommendation');
+
+    fetchMetric({ query: cpuUsageQuery }).then((usage) => {
       if (usage === null) return;
-      maxCpuUsage = usage;
+      const maxCpuUsage = usage;
 
-      // Fetch CPU Request
-      fetchMetric({ query: `max_over_time(acm_rs:cluster:cpu_request:5m[${aggregation}])` }).then((request) => {
+      fetchMetric({ query: cpuRequestQuery }).then((request) => {
         if (request === null) return;
-        maxCpuRequest = request;
+        const maxCpuRequest = request;
 
-        // Fetch Recommendation
-        fetchMetric({
-          query: `max_over_time(acm_rs:cluster:cpu_usage{profile="Max OverAll"}[${aggregation}]) * ${recommendationFactor}`,
-        }).then((recommendation) => {
+        fetchMetric({ query: cpuRecommendationQuery }).then((recommendation) => {
           if (recommendation === null) return;
+
           const utilizationPercent = (maxCpuUsage / maxCpuRequest) * 100;
+
           assertClusterCPUValue(recommendation, 'CPU Recommendation');
           assertClusterCPUValue(maxCpuUsage, 'CPU Usage');
           assertClusterCPUValue(maxCpuRequest, 'CPU Request');
@@ -224,24 +231,24 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   });
 
   it(`validates memory metrics at cluster level with given aggregation`, () => {
-    // Fetch Memory Usage
-    fetchMetric({ query: `max_over_time(acm_rs:cluster:memory_usage:5m[${aggregation}])` }).then((usage) => {
+    const memoryUsageQuery = buildClusterMetricQuery("memory_usage");
+    const memoryRequestQuery = buildClusterMetricQuery("memory_request");
+    const memoryRecommendationQuery = buildClusterMetricQuery("memory_recommendation");
+  
+    fetchMetric({ query: memoryUsageQuery }).then((usage) => {
       if (usage === null) return;
-      memoryUsageBytes = usage;
-
-      // Fetch Memory Request
-      fetchMetric({ query: `max_over_time(acm_rs:cluster:memory_request:5m[${aggregation}])` }).then((request) => {
+      const memoryUsageBytes = usage;
+  
+      fetchMetric({ query: memoryRequestQuery }).then((request) => {
         if (request === null) return;
-        memoryRequestBytes = request;
-
-        // Fetch Recommendation (Usage * 1.1)
-        fetchMetric({
-          query: `max_over_time(acm_rs:cluster:memory_usage{profile="Max OverAll"}[${aggregation}]) * ${recommendationFactor}`,
-        }).then((recommendation) => {
+        const memoryRequestBytes = request;
+  
+        fetchMetric({ query: memoryRecommendationQuery }).then((recommendation) => {
           if (recommendation === null) return;
           const recommendationBytes = recommendation;
+  
           const utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
-
+  
           assertClusterMemoryValue(recommendationBytes, 'Memory Recommendation');
           assertClusterMemoryValue(memoryUsageBytes, 'Memory Usage');
           assertClusterMemoryValue(memoryRequestBytes, 'Memory Request');
@@ -295,31 +302,52 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   });
 
   function fetchTopNamespaces(usageMetric, requestMetric, label) {
-    const query = `topk(9, max_over_time(sum by (namespace) (${usageMetric})[${aggregation}:]) / max_over_time(sum by (namespace) (${requestMetric})[${aggregation}:]) * 100)`;
+    const query = `topk(9,
+  max_over_time(
+	sum by (namespace) (
+  	${usageMetric}{cluster="${cluster}"}
+	)[${aggregation}:]
+  )
+  /
+  max_over_time(
+	sum by (namespace) (
+  	${requestMetric}{cluster="${cluster}"}
+	)[${aggregation}:]
+  ) * 100
+)
+`;
     return queryThanos(query).then((results) => {
       if (results.length === 0) {
         cy.log(`No datapoints found for top ${label} utilization namespaces`);
       }
-        const namespaces = results.map((r) => r.metric.namespace);
-        namespaces.forEach((ns, index) => {
-          const utilization = parseFloat(results[index].value[1]).toFixed(2);
-          cy.log(`${index + 1}. ${ns} - ${label} Utilization: ${utilization}%`);
-        });
-        return cy.wrap(namespaces);
+      const namespaces = results.map((r) => r.metric.namespace);
+      namespaces.forEach((ns, index) => {
+        const utilization = parseFloat(results[index].value[1]).toFixed(2);
+        cy.log(`${index + 1}. ${ns} - ${label} Utilization: ${utilization}%`);
       });
+      return cy.wrap(namespaces);
+    });
   }
 
-  function fetchMetric({ metric = null, namespace = null, query = null}) {
-    const finalQuery = query || `max_over_time(acm_rs:namespace:${metric}{namespace="${namespace}"}[${aggregation}])`;
+  function fetchMetric({ metric = null, namespace = null, query = null }) {
+    const finalQuery =
+      query ||
+      `max_over_time(
+          sum by (namespace) (
+            acm_rs:namespace:${metric}{
+              cluster="${cluster}",
+              profile="Max OverAll",
+              namespace="${namespace}"
+            }
+          )[${aggregation}:]
+        )`;
     return queryThanos(finalQuery).then((results) => {
-        if (!results || results.length === 0) {
-          cy.log(
-            `No datapoints found for ${query ? `query: ${query}` : `metric: ${metric} in namespace: ${namespace}`}`
-          );
-          return null;
-        }
-        return parseFloat(results[0].value[1]);
-      });
+      if (!results || results.length === 0) {
+        cy.log(`No datapoints found for ${query ? `query: ${query}` : `metric: ${metric} in namespace: ${namespace}`}`);
+        return null;
+      }
+      return parseFloat(results[0].value[1]);
+    });
   }
 
   function queryThanos(query) {
@@ -391,18 +419,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
           );
         }
       });
-  }
-
-  function calculateExpectedRecommendation(uiValue, actualBytes) {
-    const unit = uiValue.includes('GiB')
-      ? 'GiB'
-      : uiValue.includes('MiB')
-      ? 'MiB'
-      : uiValue.includes('B')
-      ? 'B'
-      : 'unknown';
-    const converted = convertBytes(actualBytes, unit);
-    return Number((converted * recommendationFactor).toFixed(2));
   }
 
   function convertBytes(bytes, unit) {
