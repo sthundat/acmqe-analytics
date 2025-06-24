@@ -46,18 +46,6 @@ module.exports = defineConfig({
         // Get bearer token
         const bearerToken = execSync('oc whoami -t', { encoding: 'utf-8' }).trim();
         config.env.BEARER_TOKEN = bearerToken;
-
-        // Fetch recommendationPercentage from configmap and convert to factor
-        const rawConfig = execSync(
-          'oc get configmap rs-namespace-config -n open-cluster-management-observability -o jsonpath="{.data.prometheusRuleConfig}"',
-          { encoding: 'utf-8' }
-        );
-
-        const match = rawConfig.match(/recommendationPercentage:\s*(\d+)/);
-        if (match) {
-          const percentage = parseInt(match[1], 10);
-          config.env.recommendationFactor = percentage / 100;
-        }
         // Create the route for Thanos Query Frontend Route(if not already present)
         try {
           execSync(

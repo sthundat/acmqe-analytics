@@ -1,7 +1,6 @@
 describe('Rightsizing - Validate CPU and Memory metrics', () => {
   const thanosFrontendUrl = Cypress.env('THANOS_FRONTEND_URL');
   const bearerToken = Cypress.env('BEARER_TOKEN');
-  const recommendationFactor = Cypress.env('recommendationFactor');
   const cluster = 'local-cluster';
   const aggregation = '5d';
   const memoryConversion = {
@@ -16,9 +15,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   before(() => {
     cy.login(Cypress.env('USERNAME'), Cypress.env('PASSWORD'));
     cy.contains('h2', 'CPU Utilization of Top Namespaces').should('exist');
-    //    cy.get("#var-cluster").click();
-    //    cy.contains("local-cluster").click();
-    //    cy.get("#var-days").click();
   });
   it('validates CPU metrics for top namespaces', () => {
     fetchTopNamespaces('acm_rs:namespace:cpu_usage', 'acm_rs:namespace:cpu_request', 'CPU').then((namespaces) => {
@@ -134,7 +130,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
               }
               cy.scrollTo('bottom');
               cy.wait(1000);
-              // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
               cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
                 cy.get('[data-testid="data-testid table body"]')
                   .find('[role="row"]')
@@ -250,7 +245,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
       }
     );
     cy.scrollTo('bottom');
-    // cy.get('#page-scrollbar').should('exist').scrollTo('bottom', { ensureScrollable: false });
     cy.get('@topNamespaces').then((topNamespaces) => {
       getNamespacesFromUIQuotaTable('[data-testid="data-testid Panel header Memory Quota"]').then((uiNamespaces) => {
         expect(uiNamespaces).to.deep.equal(
@@ -262,12 +256,11 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   });
 
   it("should create a workload in a custom namespace and verify the metrics", () => {
-    const namespace = 'custom-namespace';
-    cy.exec('oc get namespace ${namespace} || oc create namespace ${namespace}').then(() => {
+    cy.exec('oc get namespace custom-namespace || oc create namespace custom-namespace').then(() => {
       cy.exec('oc apply -f cypress/resources/customresource.yaml').then((result) => {
         expect(result.code).to.eq(0);
         cy.log('Workload created successfully');
-        waitForNamespaceMetrics( namespace);
+        waitForNamespaceMetrics('custom-namespace', 'cpu_usage');
         });
     });
   });
@@ -414,9 +407,17 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
       });
   }
 
-  function waitForNamespaceMetrics(namespace, retries = 7, retryInterval = 150000) {
+  function waitForNamespaceMetrics(namespace, metric, retries = 7, retryInterval = 150000) {
     // Automatic retry logic while waiting for metrics to show up
-    const query = `max_over_time(acm_rs:namespace:cpu_usage{namespace="${namespace}"}[5m])`;
+    const query = ` max_over_time(
+      sum by (namespace) (
+        acm_rs:namespace:${metric}{
+          cluster="${cluster}",
+          profile="Max OverAll",
+          namespace="${namespace}"
+        }
+      )[${aggregation}:]
+    )`;
 
     function poll(attempt = 1) {
       return queryThanos(query).then((results) => {
