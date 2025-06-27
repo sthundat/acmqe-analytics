@@ -26,7 +26,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
         fetchMetric({ metric: 'cpu_usage', namespace }).then((cpuUsage) => {
           fetchMetric({ metric: 'cpu_request', namespace }).then((cpuRequest) => {
             fetchMetric({ metric: 'cpu_recommendation', namespace }).then((cpuRecommendation) => {
-              cy.wait(1000);
               validateNamespaceCpuMetrics(namespace, cpuUsage, cpuRequest, cpuRecommendation);
             });
           });
@@ -129,7 +128,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
                 cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
               }
               cy.scrollTo('bottom');
-              cy.wait(1000);
               cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
                 cy.get('[data-testid="data-testid table body"]')
                   .find('[role="row"]')
@@ -144,7 +142,12 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
                           assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
                           assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
-                          assertNamespaceMemoryValue('MemoryRecommendation', recommendationText, memoryRecommendationBytes, namespace);
+                          assertNamespaceMemoryValue(
+                            'MemoryRecommendation',
+                            recommendationText,
+                            memoryRecommendationBytes,
+                            namespace
+                          );
 
                           const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
                           expect(tableMemoryUtilization).to.be.closeTo(
@@ -197,24 +200,24 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
   });
 
   it(`validates memory metrics at cluster level with given aggregation`, () => {
-    const memoryUsageQuery = buildClusterMetricQuery("memory_usage");
-    const memoryRequestQuery = buildClusterMetricQuery("memory_request");
-    const memoryRecommendationQuery = buildClusterMetricQuery("memory_recommendation");
-  
+    const memoryUsageQuery = buildClusterMetricQuery('memory_usage');
+    const memoryRequestQuery = buildClusterMetricQuery('memory_request');
+    const memoryRecommendationQuery = buildClusterMetricQuery('memory_recommendation');
+
     fetchMetric({ query: memoryUsageQuery }).then((usage) => {
       if (usage === null) return;
       const memoryUsageBytes = usage;
-  
+
       fetchMetric({ query: memoryRequestQuery }).then((request) => {
         if (request === null) return;
         const memoryRequestBytes = request;
-  
+
         fetchMetric({ query: memoryRecommendationQuery }).then((recommendation) => {
           if (recommendation === null) return;
           const recommendationBytes = recommendation;
-  
+
           const utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
-  
+
           assertClusterMemoryValue(recommendationBytes, 'Memory Recommendation');
           assertClusterMemoryValue(memoryUsageBytes, 'Memory Usage');
           assertClusterMemoryValue(memoryRequestBytes, 'Memory Request');
@@ -255,13 +258,13 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     });
   });
 
-  it("should create a workload in a custom namespace and verify the metrics", () => {
+  it('should create a workload in a custom namespace and verify the metrics', () => {
     cy.exec('oc get namespace custom-namespace || oc create namespace custom-namespace').then(() => {
       cy.exec('oc apply -f cypress/resources/customresource.yaml').then((result) => {
         expect(result.code).to.eq(0);
         cy.log('Workload created successfully');
         waitForNamespaceMetrics('custom-namespace', 'cpu_usage');
-        });
+      });
     });
   });
 
@@ -329,10 +332,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     const unit = uiValue.includes('GiB')
       ? 'GiB'
       : uiValue.includes('MiB')
-      ? 'MiB'
-      : uiValue.includes('B')
-      ? 'B'
-      : 'unknown';
+        ? 'MiB'
+        : uiValue.includes('B')
+          ? 'B'
+          : 'unknown';
     const converted = convertBytes(expectedValueBytes, unit);
     const parsedUIValue = parseFloat(uiValue);
     expect(parsedUIValue).to.be.closeTo(
@@ -367,10 +370,10 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
           const memoryUnit = unit.includes('GiB')
             ? 'GiB'
             : unit.includes('MiB')
-            ? 'MiB'
-            : unit.includes('B')
-            ? 'B'
-            : 'unknown';
+              ? 'MiB'
+              : unit.includes('B')
+                ? 'B'
+                : 'unknown';
           const expectedValue = convertBytes(expectedMemoryValue, memoryUnit);
           const parsedUIValue = parseFloat(NumericUIValue);
 
@@ -399,7 +402,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
         expect(uiValue).to.be.closeTo(
           Number(expectedValue.toFixed(2)),
-          .1,
+          0.1,
           `Expected ${panelTitle} to be close to: ${Number(
             expectedValue.toFixed(2)
           )}, actual ${panelTitle} in UI is: ${uiValue}`
@@ -429,6 +432,7 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
 
         if (attempt < retries) {
           cy.log(`[${currentTime}] Attempt ${attempt}: No metrics yet, retrying in ${retryInterval / 1000}s...`);
+          // eslint-disable-next-line cypress/no-unnecessary-waiting
           return cy.wait(retryInterval).then(() => poll(attempt + 1));
         }
 
