@@ -8,9 +8,6 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
     GiB: 1073741824,
     B: 1,
   };
-  let memoryUsageBytes = 0;
-  let memoryRequestBytes = 0;
-  let memoryRecommendationBytes = 0;
 
   before(() => {
     cy.login(Cypress.env('USERNAME'), Cypress.env('PASSWORD'));
@@ -110,64 +107,69 @@ describe('Rightsizing - Validate CPU and Memory metrics', () => {
         cy.wrap(namespaces).as('topNamespaces');
       }
     );
-    let utilizationPercent = 0;
+
     cy.get('@topNamespaces').then((topNamespaces) => {
       topNamespaces.forEach((namespace) => {
-        fetchMetric({ metric: 'memory_usage', namespace: namespace }).then((memoryUsage) => {
-          memoryUsageBytes = memoryUsage;
-
-          fetchMetric({ metric: 'memory_request', namespace: namespace }).then((memoryRequest) => {
-            memoryRequestBytes = memoryRequest;
-
-            fetchMetric({ metric: 'memory_recommendation', namespace: namespace }).then((memoryRecommendation) => {
-              memoryRecommendationBytes = memoryRecommendation;
-
-              if (memoryUsageBytes && memoryRequestBytes) {
-                utilizationPercent = (memoryUsageBytes / memoryRequestBytes) * 100;
+        fetchMetric({ metric: 'memory_usage', namespace }).then((memoryUsage) => {
+          fetchMetric({ metric: 'memory_request', namespace }).then((memoryRequest) => {
+            fetchMetric({ metric: 'memory_recommendation', namespace }).then((memoryRecommendation) => {
+              if (memoryUsage && memoryRequest) {
+                const utilizationPercent = (memoryUsage / memoryRequest) * 100;
+                validateNamespaceMemoryMetrics(
+                  namespace,
+                  memoryUsage,
+                  memoryRequest,
+                  memoryRecommendation,
+                  utilizationPercent
+                );
               } else {
                 cy.log(`Namespace: ${namespace} - Missing data for usage or request.`);
               }
-              cy.scrollTo('bottom');
-              cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
-                cy.get('[data-testid="data-testid table body"]')
-                  .find('[role="row"]')
-                  .should('exist')
-                  .each(($row) => {
-                    cy.wrap($row).within(() => {
-                      cy.get('[role="cell"]').then(($cells) => {
-                        const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
-
-                        if (cellTexts[0] === namespace) {
-                          const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
-
-                          assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsageBytes, namespace);
-                          assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequestBytes, namespace);
-                          assertNamespaceMemoryValue(
-                            'MemoryRecommendation',
-                            recommendationText,
-                            memoryRecommendationBytes,
-                            namespace
-                          );
-
-                          const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
-                          expect(tableMemoryUtilization).to.be.closeTo(
-                            Number(utilizationPercent.toFixed(2)),
-                            0.1,
-                            `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
-                              2
-                            )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
-                          );
-                        }
-                      });
-                    });
-                  });
-              });
             });
           });
         });
       });
     });
   });
+
+  function validateNamespaceMemoryMetrics(
+    namespace,
+    memoryUsage,
+    memoryRequest,
+    memoryRecommendation,
+    utilizationPercent
+  ) {
+    cy.scrollTo('bottom');
+    cy.get('[data-testid="data-testid Panel header Memory Quota"]').within(() => {
+      cy.get('[data-testid="data-testid table body"]')
+        .find('[role="row"]')
+        .should('exist')
+        .each(($row) => {
+          cy.wrap($row).within(() => {
+            cy.get('[role="cell"]').then(($cells) => {
+              const cellTexts = [...$cells].map((cell) => cell.innerText.trim());
+
+              if (cellTexts[0] === namespace) {
+                const [, utilizationText, usageText, requestText, recommendationText] = cellTexts;
+
+                assertNamespaceMemoryValue('MemoryUsage', usageText, memoryUsage, namespace);
+                assertNamespaceMemoryValue('MemoryRequest', requestText, memoryRequest, namespace);
+                assertNamespaceMemoryValue('MemoryRecommendation', recommendationText, memoryRecommendation, namespace);
+
+                const tableMemoryUtilization = parseFloat(utilizationText.replace('%', ''));
+                expect(tableMemoryUtilization).to.be.closeTo(
+                  Number(utilizationPercent.toFixed(2)),
+                  0.1,
+                  `Expected memory utilization of namespace '${namespace}' to be close to: ${utilizationPercent.toFixed(
+                    2
+                  )}, actual value in UI is: ${tableMemoryUtilization.toFixed(2)}`
+                );
+              }
+            });
+          });
+        });
+    });
+  }
 
   const buildClusterMetricQuery = (metricName) =>
     `max_over_time(sum by (cluster) (acm_rs:cluster:${metricName}{cluster="${cluster}", profile="Max OverAll"})[${aggregation}:])`;
