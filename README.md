@@ -14,13 +14,17 @@ This installs the dependencies into  `node_modules/` folder.
 
 ## 🔐 Environment Configuration
 
-To run Cypress tests locally, create a `cypress.env.json` file in the project root and provide login credentials:
+To run Cypress tests locally, create a `cypress.env.json` file in the root of the project.
+This file should contain the required login credentials and virtualization cluster parameters.
 
 ```json
 {
   "USERNAME": "your-cluster-username",
   "PASSWORD": "your-cluster-password",
-  "OC_SERVER_URL": "your-cluster-server-url"
+  "OC_SERVER_URL": "your-cluster-server-url",
+  "VM_CLUSTER": "vm-cluster",
+  "AGGREGATION": "aggregation",
+  "PROFILE": "profile"
 }
 ```
 Important: Do not commit this file. It should be added to  `.gitignore`.
